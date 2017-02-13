@@ -554,6 +554,71 @@ and jump to the corresponding one."
        ((< open close) (goto-char open-pair))
        (t (goto-char close-pair)))))))
 
+(eval-when-compile
+  (require 'flyspell))
+
+(defun evil--flyspell-overlays-in-p (beg end)
+  (let ((ovs (overlays-in beg end))
+        done)
+    (while (and ovs (not done))
+      (when (flyspell-overlay-p (car ovs))
+        (setq done t))
+      (setq ovs (cdr ovs)))
+    done))
+
+(defun evil--flyspell-overlay-at (pos)
+  (let ((ovs (overlays-at pos))
+        done)
+    (while (and ovs (not done))
+      (if (flyspell-overlay-p (car ovs))
+          (setq done t)
+        (setq ovs (cdr ovs))))
+    (when done
+      (car ovs))))
+
+(defun evil--next-flyspell-error (forwardp)
+  (require 'flyspell)
+  (when (not (evil--flyspell-overlays-in-p (point-min) (point-max)))
+    (user-error "No more errors"))
+  (let ((pos (point))
+        ov)
+    ;; go to first potential candidate
+    (when (evil--flyspell-overlay-at (point))
+      (forward-word (if forwardp 1 -1)))
+    ;; search until boundary
+    (while (and (if forwardp
+                    (< (point) (point-max))
+                  (> (point) (point-min)))
+                (not (setq ov (evil--flyspell-overlay-at (point)))))
+      (goto-char (if forwardp
+                     (next-overlay-change (point))
+                   (previous-overlay-change (point)))))
+    (if ov
+        (goto-char (overlay-start ov))
+      ;; wrap around, search again
+      (goto-char (if forwardp (point-min) (point-max)))
+      (while (and (if forwardp
+                      (< (point) pos)
+                    (> (point) pos))
+                  (not (setq ov (evil--flyspell-overlay-at (point)))))
+        (goto-char (if forwardp
+                       (next-overlay-change (point))
+                     (previous-overlay-change (point)))))
+      (when ov
+        (goto-char (overlay-start ov))))))
+
+(evil-define-motion evil-next-flyspell-error (count)
+  "Go to the COUNT'th spelling mistake after point."
+  (interactive "p")
+  (dotimes (_ count)
+    (evil--next-flyspell-error t)))
+
+(evil-define-motion evil-prev-flyspell-error (count)
+  "Go to the COUNT'th spelling mistake preceding point."
+  (interactive "p")
+  (dotimes (_ count)
+    (evil--next-flyspell-error nil)))
+
 (evil-define-motion evil-previous-open-paren (count)
   "Go to [count] previous unmatched '('."
   :type exclusive
